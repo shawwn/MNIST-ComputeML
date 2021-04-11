@@ -7,7 +7,15 @@
 //
 
 import Foundation
+#if !targetEnvironment(simulator)
 import MLCompute
+#endif
+//#if os(iOS)
+//import MLCompute
+//#endif
+//#if targetEnvironment(macCatalyst)
+//import MLCompute
+//#endif
 
 public class MNIST : ObservableObject {
     let imageSize = 28*28
@@ -29,7 +37,7 @@ public class MNIST : ObservableObject {
     @Published public var trainingFeedback = "Train the model"
     @Published public var epochs: Int = 5
     
-    let batchSize = 32
+    let batchSize = 128
     let dense1LayerOutputSize = 128
 
     var device: MLCDevice!
@@ -117,11 +125,16 @@ public class MNIST : ObservableObject {
         
         let iterations = 20
         var iteration = 0
+        var first = true
         var iterationList = Array<Array<String>>(repeating: Array<String>(), count: iterations)
 
         getFileLine(filePath: filePath) { line in
-            iterationList[iteration].append(line)
-            iteration = (iteration + 1) % iterations
+            if first {
+                first = false
+            } else {
+                iterationList[iteration].append(line)
+                iteration = (iteration + 1) % iterations
+            }
         }
         
         DispatchQueue.concurrentPerform(iterations: iterations) { iteration in
@@ -245,6 +258,11 @@ public class MNIST : ObservableObject {
                                 lossLabels: ["label" : lossLabelTensor])
         
         trainingGraph.compile(options: [], device: device)
+        
+        inferenceGraph = MLCInferenceGraph(graphObjects: [graph])
+        inferenceGraph.addInputs(["image" : inputTensor])
+        inferenceGraph.compile(options: [], device: device)
+
     }
     
     private func execTrainingLoop(log: (String) -> Void) {
@@ -302,20 +320,17 @@ public class MNIST : ObservableObject {
                 }
             }
             
-            let epochAccuracy = Float(epochMatch) / Float(trainingSample)
-            log("Epoch \(epoch) Accuracy = \(epochAccuracy) %")
+//            let epochAccuracy = Float(epochMatch) / Float(trainingSample)
+//            log("Epoch \(epoch) Accuracy = \(epochAccuracy*100) %")
+            
+            evaluateGraph(epoch: epoch, log: log)
         }
     }
     
-    private func evaluateGraph(log: (String) -> Void) {
+    private func evaluateGraph(epoch: Int, log: (String) -> Void) {
         let testingSample = testDataX!.count / imageSize
         let testingBatches = testingSample / batchSize
-
         
-        inferenceGraph = MLCInferenceGraph(graphObjects: [graph])
-        inferenceGraph.addInputs(["image" : inputTensor])
-        inferenceGraph.compile(options: [], device: device)
-
         // TESTING LOOP FOR A FULL EPOCH ON TESTING DATA
         var match = 0
         
@@ -357,7 +372,7 @@ public class MNIST : ObservableObject {
         }
         
         let accuracy = Float(match) / Float(testingSample)
-        log("Test Accuracy = \(accuracy) %")
+        log("Epoch \(epoch) Test Accuracy = \(accuracy*100) %")
     }
     
     private func trainGraph(log: (String) -> Void) {
@@ -376,7 +391,7 @@ public class MNIST : ObservableObject {
         
         execTrainingLoop(log: log)
 
-        evaluateGraph(log: log)
+//        evaluateGraph(log: log)
     }
     
     public func asyncTrainGraph() {
